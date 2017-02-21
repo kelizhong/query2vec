@@ -1,5 +1,5 @@
 # Working with TF commit 24466c2e6d32621cd85f0a78d47df6eed2c5c5a6
-
+#coding=utf-8
 import math
 
 import numpy as np
@@ -9,6 +9,20 @@ from tensorflow.contrib.layers.python.layers import embedding_lookup_unique
 from tensorflow.contrib.rnn import LSTMCell, LSTMStateTuple, GRUCell
 import time
 import helpers
+from seq2seq import decoder_fn
+# Define parameters
+FLAGS = tf.app.flags.FLAGS
+tf.app.flags.DEFINE_integer('steps_to_validate', 1000,
+                     'Steps to validate and print loss')
+
+# For distributed
+tf.app.flags.DEFINE_string("ps_hosts", "",
+                           "Comma-separated list of hostname:port pairs")
+tf.app.flags.DEFINE_string("worker_hosts", "localhost:2222",
+                           "Comma-separated list of hostname:port pairs")
+tf.app.flags.DEFINE_string("job_name", "worker", "One of 'ps', 'worker'")
+tf.app.flags.DEFINE_integer("task_index", 0, "Index of task within the job")
+tf.app.flags.DEFINE_integer("issync", 0, "是否采用分布式的同步模式，1表示同步模式，0表示异步模式")
 
 
 class Seq2SeqModel():
@@ -93,6 +107,8 @@ class Seq2SeqModel():
             dtype=tf.int32,
             name='decoder_targets_length',
         )
+
+        self.global_step = tf.Variable(0, name='global_step', trainable=False)
 
     def _init_decoder_train_connectors(self):
         """
@@ -191,56 +207,11 @@ class Seq2SeqModel():
             def output_fn(outputs):
                 return tf.contrib.layers.linear(outputs, self.vocab_size, scope=scope)
 
-            if not self.attention:
-                st = time.time()
-                decoder_fn_train = seq2seq.simple_decoder_fn_train(encoder_state=self.encoder_state)
+            st = time.time()
+            decoder_fn_train = decoder_fn.simple_decoder_fn_train(encoder_state=self.encoder_state)
 
-                decoder_fn_inference = seq2seq.simple_decoder_fn_inference(
-                    output_fn=output_fn,
-                    encoder_state=self.encoder_state,
-                    embeddings=self.embedding_matrix,
-                    start_of_sequence_id=self.EOS,
-                    end_of_sequence_id=self.EOS,
-                    maximum_length=tf.reduce_max(self.encoder_inputs_length) + 3,
-                    num_decoder_symbols=self.vocab_size,
-                )
-                print("decoder_fn_inference:"+str(time.time()-st))
-            else:
+            print("decoder_fn_inference:"+str(time.time()-st))
 
-                # attention_states: size [batch_size, max_time, num_units]
-                attention_states = tf.transpose(self.encoder_outputs, [1, 0, 2])
-
-                (attention_keys,
-                attention_values,
-                attention_score_fn,
-                attention_construct_fn) = seq2seq.prepare_attention(
-                    attention_states=attention_states,
-                    attention_option="bahdanau",
-                    num_units=self.decoder_hidden_units,
-                )
-
-                decoder_fn_train = seq2seq.attention_decoder_fn_train(
-                    encoder_state=self.encoder_state,
-                    attention_keys=attention_keys,
-                    attention_values=attention_values,
-                    attention_score_fn=attention_score_fn,
-                    attention_construct_fn=attention_construct_fn,
-                    name='attention_decoder'
-                )
-
-                decoder_fn_inference = seq2seq.attention_decoder_fn_inference(
-                    output_fn=output_fn,
-                    encoder_state=self.encoder_state,
-                    attention_keys=attention_keys,
-                    attention_values=attention_values,
-                    attention_score_fn=attention_score_fn,
-                    attention_construct_fn=attention_construct_fn,
-                    embeddings=self.embedding_matrix,
-                    start_of_sequence_id=self.EOS,
-                    end_of_sequence_id=self.EOS,
-                    maximum_length=tf.reduce_max(self.encoder_inputs_length) + 3,
-                    num_decoder_symbols=self.vocab_size,
-                )
             (self.decoder_outputs_train,
              self.decoder_state_train,
              self.decoder_context_state_train) = (
@@ -255,20 +226,6 @@ class Seq2SeqModel():
             )
             self.decoder_logits_train = output_fn(self.decoder_outputs_train)
             self.decoder_prediction_train = tf.argmax(self.decoder_logits_train, axis=-1, name='decoder_prediction_train')
-
-            scope.reuse_variables()
-
-            (self.decoder_logits_inference,
-             self.decoder_state_inference,
-             self.decoder_context_state_inference) = (
-                seq2seq.dynamic_rnn_decoder(
-                    cell=self.decoder_cell,
-                    decoder_fn=decoder_fn_inference,
-                    time_major=True,
-                    scope=scope,
-                )
-            )
-            self.decoder_prediction_inference = tf.argmax(self.decoder_logits_inference, axis=-1, name='decoder_prediction_inference')
 
     def _init_optimizer(self):
         logits = tf.transpose(self.decoder_logits_train, [1, 0, 2])
@@ -308,16 +265,11 @@ def make_seq2seq_model(**kwargs):
 
 
 def train_on_copy_task(session, model,
-                       length_from=3, length_to=8,
-                       vocab_lower=2, vocab_upper=10,
                        batch_size=128,
                        max_batches=5000,
                        batches_in_epoch=20,
                        verbose=True):
 
-    batches = helpers.random_sequences(length_from=length_from, length_to=length_to,
-                                       vocab_lower=vocab_lower, vocab_upper=vocab_upper,
-                                       batch_size=batch_size)
     loss_track = []
     try:
         import time
@@ -350,54 +302,56 @@ def train_on_copy_task(session, model,
 
     return loss_track
 
-
-if __name__ == '__main__':
-    import sys
-
-    if 'fw-debug' in sys.argv:
-        tf.reset_default_graph()
-        with tf.Session() as session:
-            model = make_seq2seq_model(debug=True)
-            session.run(tf.global_variables_initializer())
-            session.run(model.decoder_prediction_train)
-            session.run(model.decoder_prediction_train)
-
-    elif 'fw-inf' in sys.argv:
-        tf.reset_default_graph()
-        with tf.Session() as session:
-            model = make_seq2seq_model()
-            session.run(tf.global_variables_initializer())
-            fd = model.make_inference_inputs([[5, 4, 6, 7], [6, 6]])
-            inf_out = session.run(model.decoder_prediction_inference, fd)
-            print(inf_out)
-
-    elif 'train' in sys.argv:
-        tracks = {}
-
-        tf.reset_default_graph()
-
-        #with tf.Session() as session:
-        #    model = make_seq2seq_model(attention=True)
-        #    session.run(tf.global_variables_initializer())
-        #    loss_track_attention = train_on_copy_task(session, model)
-
-        #tf.reset_default_graph()
-
-        with tf.Session() as session:
+def create_model(checkpoint_dir, gpu="", job_type="single", task_id=0, max_batches=500000, batch_size=128):
+    ps_hosts = FLAGS.ps_hosts.split(",")
+    worker_hosts = FLAGS.worker_hosts.split(",")
+    print(FLAGS.job_name)
+    print(FLAGS.task_index)
+    cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
+    server = tf.train.Server(cluster, job_name=FLAGS.job_name, task_index=FLAGS.task_index)
+    issync = FLAGS.issync
+    if FLAGS.job_name == "ps":
+        server.join()
+    elif FLAGS.job_name == "worker":
+        # Device setting
+        core_str = "cpu:0" if (gpu is None or gpu == "") else "gpu:%d" % int(gpu)
+        if job_type == "worker":
+            device = tf.train.replica_device_setter(cluster=cluster,
+                                    worker_device='job:worker/task:%d/%s' % (task_id, core_str),
+                                    ps_device='job:ps/task:%d/%s' % (task_id, core_str))
+        else:
+            device = "/" + core_str
+        with tf.device(device):
             model = make_seq2seq_model(attention=False, bidirectional=False)
-            session.run(tf.global_variables_initializer())
-            loss_track_no_attention = train_on_copy_task(session, model)
 
-        #import matplotlib.pyplot as plt
-        #plt.plot(loss_track_no_attention)
-        #print('loss {:.4f} after {} examples (batch_size={})'.format(loss_track_no_attention[-1], len(loss_track_no_attention)*batch_size, batch_size))
+            init_op = tf.initialize_all_variables()
+            saver = tf.train.Saver()
+        sv = tf.train.Supervisor(is_chief=(FLAGS.task_index == 0),
+                                 logdir=checkpoint_dir,
+                                 init_op=init_op,
+                                 summary_op=None,
+                                 saver=saver,
+                                 global_step=model.global_step,
+                                 save_model_secs=60)
+        gpu_options = tf.GPUOptions(allow_growth=True)
+        session_config = tf.ConfigProto(allow_soft_placement=True,
+                                        # log_device_placement=True,
+                                        gpu_options=gpu_options,
+                                        intra_op_parallelism_threads=16)
+        with sv.prepare_or_wait_for_session(server.target,session_config) as sess:
+            # 如果是同步模式
+            if FLAGS.task_index == 0 and issync == 1:
+                sv.start_queue_runners(sess, [model.opt.chief_queue_runner])
+                sess.run(model.opt.init_token_op)
+            for batch in range(max_batches + 1):
+                # batch_data = next(batches)
+                encoder_inputs, decoder_inputs = helpers.train_data_sequences(batch_size)
+                fd = model.make_train_inputs(encoder_inputs, decoder_inputs)
+                start_time = time.time()
+                _, l = sess.run([model.train_op, model.loss], fd)
+                print (time.time() - start_time)
 
-    else:
-        tf.reset_default_graph()
-        session = tf.InteractiveSession()
-        model = make_seq2seq_model(debug=False)
-        session.run(tf.global_variables_initializer())
 
-        fd = model.make_inference_inputs([[5, 4, 6, 7], [6, 6]])
-
-        inf_out = session.run(model.decoder_prediction_inference, fd)
+        sv.stop()
+if __name__ == '__main__':
+    create_model('./checkpoint')
