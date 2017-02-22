@@ -4,12 +4,13 @@ import math
 
 import numpy as np
 import tensorflow as tf
-import tensorflow.contrib.seq2seq as seq2seq
+#import tensorflow.contrib.seq2seq as seq2seq
 from tensorflow.contrib.layers.python.layers import embedding_lookup_unique
 from tensorflow.contrib.rnn import LSTMCell, LSTMStateTuple, GRUCell
 import time
 import helpers
 from seq2seq import decoder_fn
+from seq2seq import seq2seq
 from tensorflow.python.framework import ops
 # Define parameters
 FLAGS = tf.app.flags.FLAGS
