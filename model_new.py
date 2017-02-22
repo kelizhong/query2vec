@@ -11,6 +11,7 @@ import time
 import helpers
 from seq2seq import decoder_fn
 from seq2seq import seq2seq
+from seq2seq.loss import sequence_loss
 from tensorflow.python.framework import ops
 # Define parameters
 FLAGS = tf.app.flags.FLAGS
@@ -233,7 +234,7 @@ class Seq2SeqModel():
     def _init_optimizer(self):
         logits = tf.transpose(self.decoder_logits_train, [1, 0, 2])
         targets = tf.transpose(self.decoder_train_targets, [1, 0])
-        self.loss = seq2seq.sequence_loss(logits=logits, targets=targets,
+        self.loss = sequence_loss(logits=logits, targets=targets,
                                           weights=self.loss_weights)
         self.train_op = tf.train.AdadeltaOptimizer().minimize(self.loss)
 
