@@ -24,7 +24,7 @@ tf.app.flags.DEFINE_string("ps_hosts", "0.0.0.0:2221",
 tf.app.flags.DEFINE_string("worker_hosts", "0.0.0.0:2222",
                            "Comma-separated list of hostname:port pairs")
 tf.app.flags.DEFINE_string("job_name", "worker", "One of 'ps', 'worker'")
-tf.app.flags.DEFINE_integer("task_id", 0, "Index of task within the job")
+tf.app.flags.DEFINE_integer("task_index", 0, "Index of task within the job")
 tf.app.flags.DEFINE_integer("issync", 0, "是否采用分布式的同步模式，1表示同步模式，0表示异步模式")
 tf.app.flags.DEFINE_string("gpu", None, "specify the gpu to use")
 
@@ -314,13 +314,13 @@ def create_model(checkpoint_dir, gpu="", max_batches=500000, batch_size=128):
     print(FLAGS.job_name)
     print(FLAGS.task_index)
     print(worker_hosts)
-    task_id = FLAGS.task_index
+    task_index = FLAGS.task_index
     job_name = FLAGS.job_name
     if(job_name == "single"):
         master = ""
     else:
         cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
-        server = tf.train.Server(cluster, job_name=FLAGS.job_name, task_index=task_id)
+        server = tf.train.Server(cluster, job_name=FLAGS.job_name, task_index=task_index)
         master = server.target
     issync = FLAGS.issync
     if FLAGS.job_name == "ps":
@@ -330,8 +330,8 @@ def create_model(checkpoint_dir, gpu="", max_batches=500000, batch_size=128):
         core_str = "cpu:0" if (gpu is None or gpu == "") else "gpu:%d" % int(gpu)
         if job_name == "worker":
             device = tf.train.replica_device_setter(cluster=cluster,
-                                    worker_device='job:worker/task:%d/%s' % (task_id, core_str),
-                                    ps_device='job:ps/task:%d/%s' % (task_id, core_str))
+                                    worker_device='job:worker/task:%d/%s' % (task_index, core_str),
+                                    ps_device='job:ps/task:%d/%s' % (task_index, core_str))
         else:
             device = "/" + core_str
         with tf.device(device):
@@ -368,5 +368,5 @@ def create_model(checkpoint_dir, gpu="", max_batches=500000, batch_size=128):
         sv.stop()
 if __name__ == '__main__':
     gpu = FLAGS.gpu
-    task_id = FLAGS.task_id
+    task_index = FLAGS.task_index
     create_model('./checkpoint', gpu)
