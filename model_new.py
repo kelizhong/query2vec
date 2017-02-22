@@ -17,9 +17,9 @@ tf.app.flags.DEFINE_integer('steps_to_validate', 1000,
                      'Steps to validate and print loss')
 
 # For distributed
-tf.app.flags.DEFINE_string("ps_hosts", "",
+tf.app.flags.DEFINE_string("ps_hosts", "0.0.0.0:2221",
                            "Comma-separated list of hostname:port pairs")
-tf.app.flags.DEFINE_string("worker_hosts", "localhost:2222",
+tf.app.flags.DEFINE_string("worker_hosts", "0.0.0.0:2222",
                            "Comma-separated list of hostname:port pairs")
 tf.app.flags.DEFINE_string("job_name", "worker", "One of 'ps', 'worker'")
 tf.app.flags.DEFINE_integer("task_index", 0, "Index of task within the job")
@@ -309,8 +309,13 @@ def create_model(checkpoint_dir, gpu="", job_type="single", task_id=0, max_batch
     worker_hosts = FLAGS.worker_hosts.split(",")
     print(FLAGS.job_name)
     print(FLAGS.task_index)
-    cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
-    server = tf.train.Server(cluster, job_name=FLAGS.job_name, task_index=FLAGS.task_index)
+    print(worker_hosts)
+    if(job_type == "single"):
+        master = ""
+    else:
+        cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
+        server = tf.train.Server(cluster, job_name=FLAGS.job_name, task_index=FLAGS.task_index)
+        master = server.target
     issync = FLAGS.issync
     if FLAGS.job_name == "ps":
         server.join()
@@ -340,7 +345,7 @@ def create_model(checkpoint_dir, gpu="", job_type="single", task_id=0, max_batch
                                         # log_device_placement=True,
                                         gpu_options=gpu_options,
                                         intra_op_parallelism_threads=16)
-        with sv.prepare_or_wait_for_session(server.target,session_config) as sess:
+        with sv.prepare_or_wait_for_session(master=master, config=session_config) as sess:
             # 如果是同步模式
             if FLAGS.task_index == 0 and issync == 1:
                 sv.start_queue_runners(sess, [model.opt.chief_queue_runner])
