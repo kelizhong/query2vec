@@ -314,7 +314,6 @@ def create_model(checkpoint_dir, gpu="", max_batches=500000):
     print(worker_hosts)
     print(FLAGS.job_name)
     print(FLAGS.task_index)
-    print(worker_hosts)
     task_index = FLAGS.task_index
     job_name = FLAGS.job_name
     batch_size = FLAGS.batchsize
@@ -328,7 +327,7 @@ def create_model(checkpoint_dir, gpu="", max_batches=500000):
     issync = FLAGS.issync
     if FLAGS.job_name == "ps":
         server.join()
-    elif FLAGS.job_name == "worker":
+    else:
         # Device setting
         core_str = "cpu:0" if (gpu is None or gpu == "") else "gpu:%d" % int(gpu)
         if job_name == "worker":
