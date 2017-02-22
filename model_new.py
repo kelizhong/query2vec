@@ -27,7 +27,6 @@ tf.app.flags.DEFINE_string("job_name", "worker", "One of 'ps', 'worker'")
 tf.app.flags.DEFINE_integer("task_index", 0, "Index of task within the job")
 tf.app.flags.DEFINE_integer("issync", 0, "是否采用分布式的同步模式，1表示同步模式，0表示异步模式")
 tf.app.flags.DEFINE_string("gpu", None, "specify the gpu to use")
-tf.app.flags.DEFINE_integer("batch_size", 128, "batch_sizeIndex of task within the job")
 
 class Seq2SeqModel():
     """Seq2Seq model usign blocks from new `tf.contrib.seq2seq`.
