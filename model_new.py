@@ -306,7 +306,7 @@ def train_on_copy_task(session, model,
 
     return loss_track
 
-def create_model(checkpoint_dir, gpu="", task_id=0, max_batches=500000, batch_size=128):
+def create_model(checkpoint_dir, gpu="", max_batches=500000, batch_size=128):
     ps_hosts = FLAGS.ps_hosts.split(",")
     worker_hosts = FLAGS.worker_hosts.split(",")
     print(ps_hosts)
@@ -314,12 +314,13 @@ def create_model(checkpoint_dir, gpu="", task_id=0, max_batches=500000, batch_si
     print(FLAGS.job_name)
     print(FLAGS.task_index)
     print(worker_hosts)
+    task_id = FLAGS.task_index
     job_name = FLAGS.job_name
     if(job_name == "single"):
         master = ""
     else:
         cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
-        server = tf.train.Server(cluster, job_name=FLAGS.job_name, task_index=FLAGS.task_index)
+        server = tf.train.Server(cluster, job_name=FLAGS.job_name, task_index=task_id)
         master = server.target
     issync = FLAGS.issync
     if FLAGS.job_name == "ps":
@@ -368,4 +369,4 @@ def create_model(checkpoint_dir, gpu="", task_id=0, max_batches=500000, batch_si
 if __name__ == '__main__':
     gpu = FLAGS.gpu
     task_id = FLAGS.task_id
-    create_model('./checkpoint', gpu, task_id)
+    create_model('./checkpoint', gpu)
