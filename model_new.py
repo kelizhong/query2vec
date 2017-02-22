@@ -306,13 +306,14 @@ def train_on_copy_task(session, model,
 
     return loss_track
 
-def create_model(checkpoint_dir, gpu="", job_type="single", task_id=0, max_batches=500000, batch_size=128):
+def create_model(checkpoint_dir, gpu="", task_id=0, max_batches=500000, batch_size=128):
     ps_hosts = FLAGS.ps_hosts.split(",")
     worker_hosts = FLAGS.worker_hosts.split(",")
     print(FLAGS.job_name)
     print(FLAGS.task_index)
     print(worker_hosts)
-    if(job_type == "single"):
+    job_name = FLAGS.job_name
+    if(job_name == "single"):
         master = ""
     else:
         cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
@@ -324,7 +325,7 @@ def create_model(checkpoint_dir, gpu="", job_type="single", task_id=0, max_batch
     elif FLAGS.job_name == "worker":
         # Device setting
         core_str = "cpu:0" if (gpu is None or gpu == "") else "gpu:%d" % int(gpu)
-        if job_type == "worker":
+        if job_name == "worker":
             device = tf.train.replica_device_setter(cluster=cluster,
                                     worker_device='job:worker/task:%d/%s' % (task_id, core_str),
                                     ps_device='job:ps/task:%d/%s' % (task_id, core_str))
