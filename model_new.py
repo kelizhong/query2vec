@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 #import tensorflow.contrib.seq2seq as seq2seq
 from tensorflow.contrib.layers.python.layers import embedding_lookup_unique
+from tensorflow.python.ops import embedding_ops
 from tensorflow.contrib.rnn import LSTMCell, LSTMStateTuple, GRUCell
 import time
 import helpers
@@ -163,10 +164,10 @@ class Seq2SeqModel():
                     initializer=initializer,
                     dtype=tf.float32)
 
-                self.encoder_inputs_embedded = embedding_lookup_unique(
+                self.encoder_inputs_embedded = embedding_ops.embedding_lookup(
                     self.embedding_matrix, self.encoder_inputs)
 
-                self.decoder_train_inputs_embedded = embedding_lookup_unique(
+                self.decoder_train_inputs_embedded = embedding_ops.embedding_lookup(
                     self.embedding_matrix, self.decoder_train_inputs)
 
     def _init_simple_encoder(self):
