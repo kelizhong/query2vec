@@ -29,6 +29,8 @@ tf.app.flags.DEFINE_integer("task_index", 0, "Index of task within the job")
 tf.app.flags.DEFINE_integer("issync", 0, "是否采用分布式的同步模式，1表示同步模式，0表示异步模式")
 tf.app.flags.DEFINE_string("gpu", None, "specify the gpu to use")
 tf.app.flags.DEFINE_integer("batchsize", 128, "batch_sizeIndex of task within the job")
+ps_hosts = FLAGS.ps_hosts.split(",")
+worker_hosts = FLAGS.worker_hosts.split(",")
 
 class Seq2SeqModel():
     """Seq2Seq model usign blocks from new `tf.contrib.seq2seq`.
@@ -238,7 +240,27 @@ class Seq2SeqModel():
         targets = tf.transpose(self.decoder_train_targets, [1, 0])
         self.loss = sequence_loss(logits=logits, targets=targets,
                                           weights=self.loss_weights)
-        self.train_op = tf.train.AdadeltaOptimizer().minimize(self.loss)
+        #self.train_op = tf.train.AdadeltaOptimizer().minimize(self.loss)
+        optimizer = tf.train.AdadeltaOptimizer()
+
+        grads_and_vars = optimizer.compute_gradients(self.loss)
+        if FLAGS.issync == 1:
+            # 同步模式计算更新梯度
+            rep_op = tf.train.SyncReplicasOptimizer(optimizer,
+                                                    replicas_to_aggregate=len(
+                                                        worker_hosts),
+                                                    replica_id=FLAGS.task_index,
+                                                    total_num_replicas=len(
+                                                        worker_hosts),
+                                                    use_locking=True)
+            self.train_op = rep_op.apply_gradients(grads_and_vars,
+                                              global_step=self.global_step)
+            self.init_token_op = rep_op.get_init_tokens_op()
+            self.chief_queue_runner = rep_op.get_chief_queue_runner()
+        else:
+            # 异步模式计算更新梯度
+            self.train_op = optimizer.apply_gradients(grads_and_vars,
+                                                 global_step=self.global_step)
 
     def make_train_inputs(self, input_seq, target_seq):
         inputs_, inputs_length_ = helpers.batch(input_seq)
@@ -309,8 +331,7 @@ def train_on_copy_task(session, model,
     return loss_track
 
 def create_model(checkpoint_dir, gpu="", max_batches=500000):
-    ps_hosts = FLAGS.ps_hosts.split(",")
-    worker_hosts = FLAGS.worker_hosts.split(",")
+
     print(ps_hosts)
     print(worker_hosts)
     print(FLAGS.job_name)
@@ -357,8 +378,8 @@ def create_model(checkpoint_dir, gpu="", max_batches=500000):
         with sv.prepare_or_wait_for_session(master=master, config=session_config) as sess:
             # 如果是同步模式
             if FLAGS.task_index == 0 and issync == 1:
-                sv.start_queue_runners(sess, [model.opt.chief_queue_runner])
-                sess.run(model.opt.init_token_op)
+                sv.start_queue_runners(sess, [model.chief_queue_runner])
+                sess.run(model.init_token_op)
             for batch in range(max_batches + 1):
                 # batch_data = next(batches)
                 encoder_inputs, decoder_inputs = helpers.train_data_sequences(batch_size)
