@@ -10,6 +10,7 @@ from tensorflow.contrib.rnn import LSTMCell, LSTMStateTuple, GRUCell
 import time
 import helpers
 from seq2seq import decoder_fn
+from tensorflow.python.framework import ops
 # Define parameters
 FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_integer('steps_to_validate', 1000,
@@ -152,17 +153,18 @@ class Seq2SeqModel():
             sqrt3 = math.sqrt(3)
             initializer = tf.random_uniform_initializer(-sqrt3, sqrt3)
 
-            self.embedding_matrix = tf.get_variable(
-                name="embedding_matrix",
-                shape=[self.vocab_size, self.embedding_size],
-                initializer=initializer,
-                dtype=tf.float32)
+            with ops.device("/cpu:0"):
+                self.embedding_matrix = tf.get_variable(
+                    name="embedding_matrix",
+                    shape=[self.vocab_size, self.embedding_size],
+                    initializer=initializer,
+                    dtype=tf.float32)
 
-            self.encoder_inputs_embedded = embedding_lookup_unique(
-                self.embedding_matrix, self.encoder_inputs)
+                self.encoder_inputs_embedded = embedding_lookup_unique(
+                    self.embedding_matrix, self.encoder_inputs)
 
-            self.decoder_train_inputs_embedded = embedding_lookup_unique(
-                self.embedding_matrix, self.decoder_train_inputs)
+                self.decoder_train_inputs_embedded = embedding_lookup_unique(
+                    self.embedding_matrix, self.decoder_train_inputs)
 
     def _init_simple_encoder(self):
         with tf.variable_scope("Encoder") as scope:
